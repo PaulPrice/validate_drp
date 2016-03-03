@@ -31,7 +31,7 @@ from lsst.afw.fits.fitsLib import FitsError
 import lsst.daf.persistence as dafPersist
 import lsst.pipe.base as pipeBase
 
-from .base import ValidateErrorNoStars
+from .base import ValidateErrorNoStars, ValidateErrorNeedMultipleDataIds
 from .calcSrd import calcAM1, calcAM2, calcAM3, calcPA1, calcPA2
 from .check import checkAstrometry, checkPhotometry, positionRms
 from .plot import plotAstrometry, plotPhotometry, plotPA1, plotAMx
@@ -454,6 +454,13 @@ def run(repo, dataIds, outputPrefix=None, level="design", verbose=False, **kwarg
         theseVisitDataIds = [v for v in dataIds if v['filter'] == filt]
         runOneFilter(repo, theseVisitDataIds, outputPrefix=thisOutputPrefix, verbose=verbose, **kwargs)
 
+        if len(theseVisitDataIds) < 2:
+            print("Skipping filter '%s' because only %d dataId found." % \
+                  (filt, len(theseVisitDataIds)))
+            continue
+
+        runOneFilter(repo, theseVisitDataIds, outputPrefix=thisOutputPrefix, verbose=verbose, **kwargs)
+
     if verbose:
         print("==============================")
         print("Comparison against *LSST SRD*.")
@@ -509,7 +516,19 @@ def runOneFilter(repo, visitDataIds, brightSnr=100,
     verbose : bool, optional
         Output additional information on the analysis steps.
 
+    Raises
+    ------
+    ValidateErrorNeedMultipleDataIds
+        If there are not at least 2 dataIds, no comparisons are possible and this error is raised.
+        There is not more sophisticated checking to see if the dataIds overlap
+        because that would impose some constraints on how to detect such things
+        which in principle requires knowing more about the Camera geometry and schema.
+    ValidateErrorNoMatches
+        Raised if no matches are found between the visitDataIds.
     """
+
+    if len(visitDataIds) < 2:
+        raise ValidateErrorNeedMultipleDataIds("Need at least 2 exposures.  Found only ", len(visitDataIds))
 
     if outputPrefix is None:
         outputPrefix = repoNameToPrefix(repo)
@@ -526,6 +545,9 @@ def runOneFilter(repo, visitDataIds, brightSnr=100,
 
     mmagerr = 1000*magerr
     mmagrms = 1000*magrms
+
+    if match <= 0:
+        raise ValidateErrorNoMatches("No matches found.  Skipping metric calculation.")
 
     checkAstrometry(struct.snr, dist, match,
                     brightSnr=brightSnr,
